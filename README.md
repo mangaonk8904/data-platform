@@ -116,7 +116,8 @@ that notifies at 80% and suspends at 100%. Separate warehouses mean `QUERY_HISTO
 config/access.yaml     desired state (source of truth)
 src/mdp/config.py      load + validate (unknown schemas/warehouses fail fast)
 src/mdp/sqlgen.py      desired state -> ordered, idempotent SQL
-src/mdp/apply.py       CLI: --dry-run prints SQL, otherwise executes it
+src/mdp/apply.py       CLI: --dry-run prints SQL, otherwise executes it (additive)
+src/mdp/reconcile.py   CLI: diff declared vs actual grants; --plan (default) / --apply revokes drift
 src/mdp/seed.py        synthetic Mercor data
 tests/                 offline unit tests for config and SQL generation
 ```
@@ -124,8 +125,8 @@ tests/                 offline unit tests for config and SQL generation
 ## Phases
 
 0. Bootstrap, key-pair auth (done)
-1. Layout, role hierarchy, warehouses, seed data (this phase)
-2. Diffing reconciler with `--plan` and revoke of drift
+1. Layout, role hierarchy, warehouses, seed data (done)
+2. Diffing reconciler with `--plan` and revoke of drift (this phase)
 3. Tag-based masking, row access policies, per-role verification tests
 4. Joiner/mover/leaver sync from a mock HR feed, with audit log
 5. PII classifier and drift alerts
@@ -139,6 +140,8 @@ cp .env.example .env            # fill in account/user; key in keys/
 uv run python -m mdp.apply --dry-run     # print the SQL
 uv run python -m mdp.apply               # apply
 uv run python -m mdp.seed                # load synthetic data
+uv run python -m mdp.reconcile --plan    # show drift (add --apply to fix, --fail-on-drift for CI)
+uv run python scripts/demo_drift.py      # inject rogue grants, catch and remove them
 uv run --with pytest pytest
 ```
 
@@ -148,5 +151,20 @@ asserts which tables are readable or denied (17 checks). Writing it caught a rea
 after `USE ROLE`, so every role looked like it could read everything. Tests must run
 `USE SECONDARY ROLES NONE`. The same applies to any user with `DEFAULT_SECONDARY_ROLES=ALL`.
 
-Phase 1 only *adds*: it creates and grants but never revokes. Removing drift is the
-reconciler's job in Phase 2.
+## Reconciler (Phase 2)
+
+`mdp.apply` only adds. `mdp.reconcile` makes Snowflake match `access.yaml` in both
+directions. It reads `SHOW GRANTS TO ROLE` and `SHOW FUTURE GRANTS TO ROLE` for every
+managed role, expands declared grants into object-level atoms (`ALL TABLES IN SCHEMA`
+against the tables that exist), and diffs the two sets. `sqlgen` and the reconciler share
+one list of declared `Grant`s, so what gets applied and what gets checked cannot diverge.
+
+- Managed roles (access, functional, service) are fully declarative: any privilege they hold
+  that the config doesn't declare is revoked, on any object. `OWNERSHIP` is ignored.
+- Roles that look managed (`AR_`/`FR_`/`SVC_`) but aren't in the config are reported, never touched.
+- Grants to other roles (SYSADMIN, etc.) and users' role memberships are out of scope.
+- Not yet reconciled: schema managed-access flag, warehouse settings, resource monitors.
+
+`scripts/demo_drift.py` hand-grants the PII access role to the analyst role plus a stray
+`DELETE`, shows an analyst really reading 500 PII rows, then reconciles and shows the
+read denied and the plan empty.

@@ -3,6 +3,8 @@
 Each statement is tagged with the Snowflake role that must run it, so the
 applier never does more than the least-privileged built-in role requires.
 """
+from typing import NamedTuple
+
 from mdp.config import all_schemas, expand
 
 SYSADMIN, SECURITYADMIN, ACCOUNTADMIN = "SYSADMIN", "SECURITYADMIN", "ACCOUNTADMIN"
@@ -56,44 +58,76 @@ def monitors(cfg):
     return out
 
 
-def access_roles(cfg):
-    """Create access roles and give them the only privileges in the system."""
+class Grant(NamedTuple):
+    """One declared grant. `scope` is the SQL object clause, e.g. 'SCHEMA RAW.X' or
+    'ALL TABLES IN SCHEMA RAW.X'; role grants use 'ROLE <name>'."""
+    grantee: str
+    privs: tuple
+    scope: str
+
+    def sql(self):
+        if self.scope.startswith("ROLE "):
+            return f"GRANT {self.scope} TO ROLE {self.grantee}"
+        return f"GRANT {', '.join(self.privs)} ON {self.scope} TO ROLE {self.grantee}"
+
+
+def access_role_names(cfg):
+    names = []
+    for db, s in all_schemas(cfg):
+        names += [ar_schema(db, s, "RO"), ar_schema(db, s, "RW")]
+    return names + [ar_wh(wh) for wh in cfg["warehouses"]]
+
+
+def access_grants(cfg):
+    """The only object privileges in the system: access roles on schemas and warehouses."""
     out = []
     for db, s in all_schemas(cfg):
-        ro, rw = ar_schema(db, s, "RO"), ar_schema(db, s, "RW")
-        out += [(SECURITYADMIN, f"CREATE ROLE IF NOT EXISTS {r}") for r in (ro, rw)]
-        sc = f"{db}.{s}"
-        out += [(SECURITYADMIN, q) for q in (
-            f"GRANT USAGE ON DATABASE {db} TO ROLE {ro}",
-            f"GRANT USAGE ON SCHEMA {sc} TO ROLE {ro}",
-            f"GRANT SELECT ON ALL TABLES IN SCHEMA {sc} TO ROLE {ro}",
-            f"GRANT SELECT ON FUTURE TABLES IN SCHEMA {sc} TO ROLE {ro}",
-            f"GRANT SELECT ON ALL VIEWS IN SCHEMA {sc} TO ROLE {ro}",
-            f"GRANT SELECT ON FUTURE VIEWS IN SCHEMA {sc} TO ROLE {ro}",
-            f"GRANT ROLE {ro} TO ROLE {rw}",
-            f"GRANT INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA {sc} TO ROLE {rw}",
-            f"GRANT INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE TABLES IN SCHEMA {sc} TO ROLE {rw}",
-            f"GRANT CREATE TABLE, CREATE VIEW ON SCHEMA {sc} TO ROLE {rw}",
-        )]
-    for wh in cfg["warehouses"]:
-        r = ar_wh(wh)
-        out.append((SECURITYADMIN, f"CREATE ROLE IF NOT EXISTS {r}"))
-        out.append((SECURITYADMIN, f"GRANT USAGE ON WAREHOUSE {wh} TO ROLE {r}"))
+        ro, rw, sc = ar_schema(db, s, "RO"), ar_schema(db, s, "RW"), f"{db}.{s}"
+        out += [
+            Grant(ro, ("USAGE",), f"DATABASE {db}"),
+            Grant(ro, ("USAGE",), f"SCHEMA {sc}"),
+            Grant(ro, ("SELECT",), f"ALL TABLES IN SCHEMA {sc}"),
+            Grant(ro, ("SELECT",), f"FUTURE TABLES IN SCHEMA {sc}"),
+            Grant(ro, ("SELECT",), f"ALL VIEWS IN SCHEMA {sc}"),
+            Grant(ro, ("SELECT",), f"FUTURE VIEWS IN SCHEMA {sc}"),
+            Grant(rw, ("USAGE",), f"ROLE {ro}"),
+            Grant(rw, ("INSERT", "UPDATE", "DELETE", "TRUNCATE"), f"ALL TABLES IN SCHEMA {sc}"),
+            Grant(rw, ("INSERT", "UPDATE", "DELETE", "TRUNCATE"), f"FUTURE TABLES IN SCHEMA {sc}"),
+            Grant(rw, ("CREATE TABLE", "CREATE VIEW"), f"SCHEMA {sc}"),
+        ]
+    out += [Grant(ar_wh(wh), ("USAGE",), f"WAREHOUSE {wh}") for wh in cfg["warehouses"]]
     return out
 
 
-def composite_roles(cfg):
+def composite_grants(cfg):
     """Functional and service roles hold access roles, never object privileges."""
     out = []
     for name, r in {**cfg["functional_roles"], **cfg["service_roles"]}.items():
-        out.append((SECURITYADMIN, f"CREATE ROLE IF NOT EXISTS {name} COMMENT = '{_q(r['comment'])}'"))
-        for db, s in expand(cfg, r.get("read", [])):
-            out.append((SECURITYADMIN, f"GRANT ROLE {ar_schema(db, s, 'RO')} TO ROLE {name}"))
-        for db, s in expand(cfg, r.get("write", [])):
-            out.append((SECURITYADMIN, f"GRANT ROLE {ar_schema(db, s, 'RW')} TO ROLE {name}"))
-        for wh in r.get("warehouses", []):
-            out.append((SECURITYADMIN, f"GRANT ROLE {ar_wh(wh)} TO ROLE {name}"))
+        out += [Grant(name, ("USAGE",), f"ROLE {ar_schema(db, s, 'RO')}") for db, s in expand(cfg, r.get("read", []))]
+        out += [Grant(name, ("USAGE",), f"ROLE {ar_schema(db, s, 'RW')}") for db, s in expand(cfg, r.get("write", []))]
+        out += [Grant(name, ("USAGE",), f"ROLE {ar_wh(wh)}") for wh in r.get("warehouses", [])]
     return out
+
+
+def desired_grants(cfg):
+    return access_grants(cfg) + composite_grants(cfg)
+
+
+def managed_roles(cfg):
+    return access_role_names(cfg) + list(cfg["functional_roles"]) + list(cfg["service_roles"])
+
+
+def access_roles(cfg):
+    """Create access roles and give them the only privileges in the system."""
+    out = [(SECURITYADMIN, f"CREATE ROLE IF NOT EXISTS {r}") for r in access_role_names(cfg)]
+    return out + [(SECURITYADMIN, g.sql()) for g in access_grants(cfg)]
+
+
+def composite_roles(cfg):
+    out = []
+    for name, r in {**cfg["functional_roles"], **cfg["service_roles"]}.items():
+        out.append((SECURITYADMIN, f"CREATE ROLE IF NOT EXISTS {name} COMMENT = '{_q(r['comment'])}'"))
+    return out + [(SECURITYADMIN, g.sql()) for g in composite_grants(cfg)]
 
 
 def render(cfg):
