@@ -1,0 +1,84 @@
+warehouses:
+  WH_ADMIN:     {size: XSMALL, auto_suspend: 60, credit_quota: 10, purpose: platform tooling and seeding}
+  WH_LOADING:   {size: XSMALL, auto_suspend: 60, credit_quota: 20, purpose: Fivetran ingestion}
+  WH_TRANSFORM: {size: XSMALL, auto_suspend: 60, credit_quota: 30, purpose: Airflow transforms}
+  WH_ANALYTICS: {size: XSMALL, auto_suspend: 60, credit_quota: 20, purpose: analysts and Hex}
+
+databases:
+  RAW:
+    comment: Landing zone written by ingestion tools only
+    schemas:
+      FIVETRAN_PG:      {owner_team: data-platform, sensitivity: restricted}
+      FIVETRAN_STRIPE:  {owner_team: finance-eng,   sensitivity: restricted}
+      INTERNAL_UPLOADS: {owner_team: data-platform, sensitivity: confidential}
+  CURATED:
+    comment: Cleaned and modelled source of truth
+    schemas:
+      EXPERTS:           {owner_team: talent,       sensitivity: confidential}
+      EXPERTS_SENSITIVE: {owner_team: talent,       sensitivity: restricted}
+      CUSTOMERS:         {owner_team: enterprise,   sensitivity: confidential}
+      WORK:              {owner_team: operations,   sensitivity: internal}
+      PAYMENTS:          {owner_team: finance-eng,  sensitivity: restricted}
+  MARTS:
+    comment: Team-facing aggregates read by dashboards
+    schemas:
+      GROWTH:  {owner_team: growth,  sensitivity: internal}
+      FINANCE: {owner_team: finance, sensitivity: confidential}
+      ML:      {owner_team: ml,      sensitivity: confidential}
+      EXEC:    {owner_team: data-platform, sensitivity: internal}
+  GOVERNANCE:
+    comment: Tags, policies, entitlements, audit
+    schemas:
+      TAGS:         {owner_team: data-platform, sensitivity: internal}
+      POLICIES:     {owner_team: data-platform, sensitivity: internal}
+      ENTITLEMENTS: {owner_team: data-platform, sensitivity: confidential}
+      AUDIT:        {owner_team: data-platform, sensitivity: confidential}
+  PLATFORM:
+    comment: Platform tooling state
+    schemas:
+      OPS:  {owner_team: data-platform, sensitivity: internal}
+      COST: {owner_team: data-platform, sensitivity: internal}
+
+functional_roles:
+  FR_DATA_ANALYST:
+    comment: Analysts; no PII, read-only
+    read: [CURATED.WORK, CURATED.CUSTOMERS, CURATED.EXPERTS, MARTS.GROWTH, MARTS.EXEC]
+    warehouses: [WH_ANALYTICS]
+  FR_DATA_SCIENTIST:
+    comment: ML; reads work and expert data, writes ML marts
+    read: [CURATED.WORK, CURATED.EXPERTS]
+    write: [MARTS.ML]
+    warehouses: [WH_ANALYTICS]
+  FR_FINANCE:
+    comment: Finance; payments and customer contracts
+    read: [CURATED.PAYMENTS, CURATED.CUSTOMERS]
+    write: [MARTS.FINANCE]
+    warehouses: [WH_ANALYTICS]
+  FR_SUPPORT:
+    comment: Expert support
+    read: [CURATED.EXPERTS, CURATED.WORK]
+    warehouses: [WH_ANALYTICS]
+  FR_PII_READER:
+    comment: Additive; unmasks and reads restricted expert data
+    read: [CURATED.EXPERTS_SENSITIVE]
+    warehouses: [WH_ANALYTICS]
+  FR_DATA_PLATFORM:
+    comment: Platform engineers; manage policies and tooling, no data access by default
+    read: [GOVERNANCE.*]
+    write: [PLATFORM.*]
+    warehouses: [WH_ADMIN]
+
+service_roles:
+  SVC_FIVETRAN:
+    comment: Fivetran connectors
+    write: [RAW.FIVETRAN_PG, RAW.FIVETRAN_STRIPE]
+    warehouses: [WH_LOADING]
+  SVC_AIRFLOW:
+    comment: Airflow transforms raw into curated and marts
+    read: [RAW.*]
+    write: [CURATED.*, MARTS.*]
+    warehouses: [WH_TRANSFORM]
+  SVC_HEX:
+    comment: Hex dashboards read marts only
+    read: [MARTS.*]
+    warehouses: [WH_ANALYTICS]
