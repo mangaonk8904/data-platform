@@ -1,0 +1,4 @@
+snowflake-connector-python>=3.12
+python-dotenv
+cryptography
+pyyaml

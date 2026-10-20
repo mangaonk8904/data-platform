@@ -1,0 +1,8 @@
+pyproject.toml
+src/mdp/__init__.py
+src/mdp/conn.py
+src/mercor_data_platform.egg-info/PKG-INFO
+src/mercor_data_platform.egg-info/SOURCES.txt
+src/mercor_data_platform.egg-info/dependency_links.txt
+src/mercor_data_platform.egg-info/requires.txt
+src/mercor_data_platform.egg-info/top_level.txt

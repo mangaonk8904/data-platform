@@ -1,0 +1,8 @@
+.env
+*.p8
+*.pem
+keys/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
