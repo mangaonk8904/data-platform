@@ -18,7 +18,7 @@ def main():
         print(f"-- {len(stmts)} statements")
         return
 
-    with connect(role="ACCOUNTADMIN") as conn:
+    with connect(role="SECURITYADMIN") as conn:
         cur = conn.cursor()
         current = None
         for role, sql in stmts:

@@ -93,9 +93,13 @@ Design choices worth defending:
   separately-reviewable grant.
 - **Roles are owned by `SECURITYADMIN`, objects by `SYSADMIN`.** Standard separation of
   duties; `ACCOUNTADMIN` is bootstrap only.
-- `PLATFORM_ADMIN` (service user, key-pair) runs this tooling. It currently holds
-  `ACCOUNTADMIN` for bootstrap; Phase 1 follow-up is dropping it to `SYSADMIN` +
-  `SECURITYADMIN`.
+- `PLATFORM_ADMIN` (service user, key-pair) runs this tooling with `SYSADMIN` +
+  `SECURITYADMIN` only: no `ACCOUNTADMIN`, no secondary roles (`platform_user` in
+  `access.yaml`). Resource monitors are the one `ACCOUNTADMIN`-only job: the create privilege
+  isn't grantable, and attaching a monitor to a warehouse needs `MODIFY` on the whole
+  account. `python -m mdp.narrow --execute` does that once as `ACCOUNTADMIN` (create, hand
+  ownership to `SYSADMIN`, attach), proves the narrowed roles can still alter quotas,
+  and only then revokes `ACCOUNTADMIN`. Re-adding a warehouse needs the same break-glass step.
 
 ## Warehouses
 
@@ -117,6 +121,7 @@ config/access.yaml     desired state (source of truth)
 src/mdp/config.py      load + validate (unknown schemas/warehouses fail fast)
 src/mdp/sqlgen.py      desired state -> ordered, idempotent SQL
 src/mdp/apply.py       CLI: --dry-run prints SQL, otherwise executes it (additive)
+src/mdp/narrow.py      one-time ACCOUNTADMIN bootstrap, then drops it from the service user
 src/mdp/reconcile.py   CLI: diff declared vs actual grants; --plan (default) / --apply revokes drift
 src/mdp/seed.py        synthetic Mercor data
 tests/                 offline unit tests for config and SQL generation

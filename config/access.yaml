@@ -1,3 +1,10 @@
+# The service user that runs this tooling. Least privilege: no ACCOUNTADMIN, no secondary roles.
+platform_user:
+  name: PLATFORM_ADMIN
+  roles: [SYSADMIN, SECURITYADMIN]
+  default_role: SYSADMIN
+  default_warehouse: WH_ADMIN
+
 warehouses:
   WH_ADMIN:     {size: XSMALL, auto_suspend: 60, credit_quota: 10, purpose: platform tooling and seeding}
   WH_LOADING:   {size: XSMALL, auto_suspend: 60, credit_quota: 20, purpose: Fivetran ingestion}

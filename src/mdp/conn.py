@@ -21,7 +21,7 @@ def connect(**overrides):
         account=os.environ["SNOWFLAKE_ACCOUNT"].strip(),
         user=os.environ["SNOWFLAKE_USER"].strip(),
         private_key=der,
-        role=os.environ.get("SNOWFLAKE_ROLE", "ACCOUNTADMIN").strip(),
+        role=os.environ.get("SNOWFLAKE_ROLE", "SYSADMIN").strip(),
         warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH").strip(),
     )
     params.update(overrides)

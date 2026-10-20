@@ -81,3 +81,21 @@ def test_render_is_deterministic(cfg):
 def test_default_public_schema_dropped_everywhere(cfg):
     drops = {s for _, s in render(cfg) if s.startswith("DROP SCHEMA")}
     assert drops == {f"DROP SCHEMA IF EXISTS {db}.PUBLIC" for db in cfg["databases"]}
+
+
+def test_day_to_day_render_needs_no_accountadmin(cfg):
+    assert all(role != "ACCOUNTADMIN" for role, _ in render(cfg))
+
+
+def test_platform_user_never_gets_accountadmin(cfg):
+    from mdp.sqlgen import platform_user
+    sql = [s for _, s in platform_user(cfg)]
+    assert not any(s.startswith("GRANT ROLE ACCOUNTADMIN") for s in sql)
+    assert "DEFAULT_SECONDARY_ROLES = ()" in sql[-1]
+
+
+def test_platform_user_validation(cfg):
+    bad = copy.deepcopy(cfg)
+    bad["platform_user"]["roles"].append("ACCOUNTADMIN")
+    with pytest.raises(ConfigError):
+        validate(bad)

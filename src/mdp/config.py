@@ -51,6 +51,12 @@ def validate(cfg):
         if not IDENT.match(n):
             raise ConfigError(f"invalid identifier {n!r}: use UPPER_SNAKE_CASE")
 
+    pu = cfg["platform_user"]
+    if "ACCOUNTADMIN" in pu["roles"] or pu["default_role"] not in pu["roles"]:
+        raise ConfigError("platform_user must not hold ACCOUNTADMIN and its default_role must be one of its roles")
+    if pu["default_warehouse"] not in cfg["warehouses"]:
+        raise ConfigError("platform_user.default_warehouse is not a declared warehouse")
+
     roles = {**cfg["functional_roles"], **cfg["service_roles"]}
     if set(cfg["functional_roles"]) & set(cfg["service_roles"]):
         raise ConfigError("role defined as both functional and service")

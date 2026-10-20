@@ -45,7 +45,18 @@ def objects(cfg):
 
 
 def monitors(cfg):
-    """One monthly resource monitor per warehouse: notify at 80%, suspend at 100%."""
+    """Day-to-day quota changes, as SYSADMIN (which owns the monitors after bootstrap)."""
+    out = []
+    for wh, w in cfg["warehouses"].items():
+        rm = f"RM_{wh}"
+        out.append((SYSADMIN, f"ALTER RESOURCE MONITOR {rm} SET CREDIT_QUOTA = {w['credit_quota']}"))
+    return out
+
+
+def monitor_bootstrap(cfg):
+    """Only ACCOUNTADMIN can create resource monitors (the privilege is not grantable), so
+    create them once, notify at 80% / suspend at 100%, hand ownership to SYSADMIN, and attach
+    them to warehouses (that needs MODIFY on the whole ACCOUNT, too broad to delegate)."""
     out = []
     for wh, w in cfg["warehouses"].items():
         rm = f"RM_{wh}"
@@ -53,7 +64,7 @@ def monitors(cfg):
             f"CREATE RESOURCE MONITOR IF NOT EXISTS {rm} WITH CREDIT_QUOTA = {w['credit_quota']} "
             f"FREQUENCY = MONTHLY START_TIMESTAMP = IMMEDIATELY "
             f"TRIGGERS ON 80 PERCENT DO NOTIFY ON 100 PERCENT DO SUSPEND"))
-        out.append((ACCOUNTADMIN, f"ALTER RESOURCE MONITOR {rm} SET CREDIT_QUOTA = {w['credit_quota']}"))
+        out.append((ACCOUNTADMIN, f"GRANT OWNERSHIP ON RESOURCE MONITOR {rm} TO ROLE {SYSADMIN} COPY CURRENT GRANTS"))
         out.append((ACCOUNTADMIN, f"ALTER WAREHOUSE {wh} SET RESOURCE_MONITOR = {rm}"))
     return out
 
@@ -128,6 +139,18 @@ def composite_roles(cfg):
     for name, r in {**cfg["functional_roles"], **cfg["service_roles"]}.items():
         out.append((SECURITYADMIN, f"CREATE ROLE IF NOT EXISTS {name} COMMENT = '{_q(r['comment'])}'"))
     return out + [(SECURITYADMIN, g.sql()) for g in composite_grants(cfg)]
+
+
+def platform_user(cfg):
+    """One-time bootstrap: give the service user exactly SYSADMIN + SECURITYADMIN. Run by an
+    ACCOUNTADMIN (see mdp.narrow); not part of render() because the day-to-day applier can't alter itself."""
+    u = cfg["platform_user"]
+    out = [(SECURITYADMIN, f"GRANT ROLE {r} TO USER {u['name']}") for r in u["roles"]]
+    out += monitor_bootstrap(cfg)
+    out.append((ACCOUNTADMIN,
+        f"ALTER USER {u['name']} SET DEFAULT_ROLE = {u['default_role']}, "
+        f"DEFAULT_WAREHOUSE = {u['default_warehouse']}, DEFAULT_SECONDARY_ROLES = ()"))
+    return out
 
 
 def render(cfg):
