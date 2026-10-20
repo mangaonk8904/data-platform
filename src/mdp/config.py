@@ -71,3 +71,49 @@ def validate(cfg):
     for wh, w in cfg["warehouses"].items():
         if w["auto_suspend"] <= 0 or w["credit_quota"] <= 0:
             raise ConfigError(f"{wh}: auto_suspend and credit_quota must be positive")
+    validate_governance(cfg)
+
+
+def column_classes(cfg):
+    """{'DB.SCHEMA.TABLE.COLUMN': CLASS} for every classified column."""
+    g = cfg.get("governance", {})
+    return {f"{t}.{c}": cls for t, cols in g.get("columns", {}).items() for c, cls in cols.items()}
+
+
+def validate_governance(cfg):
+    g = cfg.get("governance")
+    if not g:
+        return
+    roles = {**cfg["functional_roles"], **cfg["service_roles"]}
+    if len(g["tag"].split(".")) != 3 or not all(IDENT.match(p) for p in g["tag"].split(".")):
+        raise ConfigError(f"governance.tag must be DB.SCHEMA.NAME, got {g['tag']!r}")
+    if (g["tag"].split(".")[0], g["tag"].split(".")[1]) not in all_schemas(cfg):
+        raise ConfigError(f"governance.tag {g['tag']!r} must live in a declared schema")
+    for cls, c in g["classes"].items():
+        if not IDENT.match(cls):
+            raise ConfigError(f"invalid class name {cls!r}")
+        for r in c.get("unmask", []):
+            if r not in roles:
+                raise ConfigError(f"class {cls}: unmask role {r!r} is not a declared role")
+    known = set(all_schemas(cfg))
+    for table, cols in {**g.get("columns", {}), **g.get("row_access", {})}.items():
+        parts = table.split(".")
+        if len(parts) != 3 or (parts[0], parts[1]) not in known or not all(IDENT.match(p) for p in parts):
+            raise ConfigError(f"unknown table reference {table!r}")
+    for table, cols in g.get("columns", {}).items():
+        for col, cls in cols.items():
+            if not IDENT.match(col) or cls not in g["classes"]:
+                raise ConfigError(f"{table}.{col}: bad column or unknown class {cls!r}")
+    for table, ra in g.get("row_access", {}).items():
+        if not IDENT.match(ra["column"]):
+            raise ConfigError(f"{table}: bad row_access column")
+        cls = g.get("columns", {}).get(table, {}).get(ra["column"])
+        if cls is None or g["classes"][cls].get("mask", True):
+            raise ConfigError(f"{table}.{ra['column']}: a row_access column must be classified with a "
+                              f"mask: false class (Snowflake cannot mask a row-policy argument)")
+        for r in list(ra.get("unrestricted", [])) + list(ra.get("regions", {})):
+            if r not in roles:
+                raise ConfigError(f"{table}: row_access role {r!r} is not a declared role")
+        for r, regions in ra.get("regions", {}).items():
+            if not regions or not all(re.fullmatch(r"[A-Za-z0-9_ -]+", x) for x in regions):
+                raise ConfigError(f"{table}: bad regions for {r}")

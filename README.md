@@ -123,6 +123,7 @@ src/mdp/sqlgen.py      desired state -> ordered, idempotent SQL
 src/mdp/apply.py       CLI: --dry-run prints SQL, otherwise executes it (additive)
 src/mdp/narrow.py      one-time ACCOUNTADMIN bootstrap, then drops it from the service user
 src/mdp/reconcile.py   CLI: diff declared vs actual grants; --plan (default) / --apply revokes drift
+src/mdp/governance.py  tag-driven masking + row access policies: apply, plan, coverage checks
 src/mdp/seed.py        synthetic Mercor data
 tests/                 offline unit tests for config and SQL generation
 ```
@@ -131,8 +132,8 @@ tests/                 offline unit tests for config and SQL generation
 
 0. Bootstrap, key-pair auth (done)
 1. Layout, role hierarchy, warehouses, seed data (done)
-2. Diffing reconciler with `--plan` and revoke of drift (this phase)
-3. Tag-based masking, row access policies, per-role verification tests
+2. Diffing reconciler with `--plan` and revoke of drift (done)
+3. Tag-based masking, row access policies, per-role verification tests (this phase)
 4. Joiner/mover/leaver sync from a mock HR feed, with audit log
 5. PII classifier and drift alerts
 6. Access review report, cost attribution
@@ -146,6 +147,8 @@ uv run python -m mdp.apply --dry-run     # print the SQL
 uv run python -m mdp.apply               # apply
 uv run python -m mdp.seed                # load synthetic data
 uv run python -m mdp.reconcile --plan    # show drift (add --apply to fix, --fail-on-drift for CI)
+uv run python -m mdp.governance --apply  # tags, masking + row policies (needs the bootstrap below once)
+uv run python scripts/verify_policies.py # live: what each role actually sees (25 checks)
 uv run python scripts/demo_drift.py      # inject rogue grants, catch and remove them
 uv run --with pytest pytest
 ```
@@ -173,3 +176,36 @@ one list of declared `Grant`s, so what gets applied and what gets checked cannot
 `scripts/demo_drift.py` hand-grants the PII access role to the analyst role plus a stray
 `DELETE`, shows an analyst really reading 500 PII rows, then reconciles and shows the
 read denied and the plan empty.
+
+## Masking and row access (Phase 3)
+
+One tag, `GOVERNANCE.TAGS.DATA_CLASS`, is set on columns; one masking policy per data type
+(string, number, date) is attached to the tag. The policy body switches on the tag value and
+`IS_ROLE_IN_SESSION`, so protecting a column is a single tagging step in `access.yaml`.
+
+| Class | Columns (examples) | Sees real values | Everyone else sees |
+|---|---|---|---|
+| PII_DIRECT | expert email, full_name | FR_SUPPORT, FR_PII_READER, SVC_AIRFLOW | `***MASKED***` |
+| PII_SENSITIVE | tax_id, phone, address, DOB | FR_PII_READER, SVC_AIRFLOW | masked / NULL |
+| FINANCIAL | hourly rate, payment amount, contract value | FR_FINANCE, SVC_AIRFLOW | NULL |
+| GENERAL | everything else | everyone | n/a (declared, not tagged) |
+
+Row access on `CURATED.CUSTOMERS` (Snowflake has no tag-based row policies): FR_FINANCE and
+SVC_AIRFLOW see all rows, FR_DATA_ANALYST sees NA and EMEA, any other role sees none. The
+role-to-region map lives in `GOVERNANCE.ENTITLEMENTS.REGION_ACCESS`, synced from config on every apply.
+
+`mdp.governance --plan` diffs tag-on-column, policy-on-tag and policy-on-table against live
+state and runs **coverage checks** that fail the plan: an unclassified column or table in a
+restricted schema, a classified column whose type no policy covers, or a config column that no
+longer exists. `--fail-on-drift` makes it a CI gate. Defining policies uses `CREATE ... IF NOT
+EXISTS` then `SET BODY`, never `CREATE OR REPLACE`, which fails or detaches while attached.
+
+Things learned the hard way:
+- **One-time bootstrap.** `APPLY TAG / MASKING POLICY / ROW ACCESS POLICY ON ACCOUNT` can only be
+  granted by `ACCOUNTADMIN` (SECURITYADMIN is refused). `--bootstrap-sql` prints the three grants;
+  `--apply` checks for them first. After that SYSADMIN alone runs everything.
+- **A masked column cannot be a row-policy argument.** Tagging `REGION` with a masking class made
+  the whole table unreadable even though the plan was clean. Classes with `mask: false` are
+  therefore declared (for coverage) but never tagged, and config validation rejects a masked
+  row-policy column. Only `verify_policies.py`, which actually queries as each role, caught this.
+- Seed customers now cycle through all regions, otherwise the APAC filter has nothing to hide.

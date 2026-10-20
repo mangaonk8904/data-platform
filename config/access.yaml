@@ -89,3 +89,50 @@ service_roles:
     comment: Hex dashboards read marts only
     read: [MARTS.*]
     warehouses: [WH_ANALYTICS]
+
+# Phase 3: tag-driven masking and row access. One tag (GOVERNANCE.TAGS.DATA_CLASS) is put on
+# columns; one masking policy per data type is attached to the tag, so tagging a column is the
+# only step needed to protect it. `unmask` roles see real values (checked with IS_ROLE_IN_SESSION).
+# SVC_AIRFLOW unmasks everything because transforms must read true values.
+governance:
+  tag: GOVERNANCE.TAGS.DATA_CLASS
+  classes:
+    GENERAL:       {mask: false}
+    PII_DIRECT:    {unmask: [FR_SUPPORT, FR_PII_READER, SVC_AIRFLOW]}
+    PII_SENSITIVE: {unmask: [FR_PII_READER, SVC_AIRFLOW]}
+    FINANCIAL:     {unmask: [FR_FINANCE, SVC_AIRFLOW]}
+  columns:
+    CURATED.EXPERTS.EXPERTS:
+      EXPERT_ID: GENERAL
+      EMAIL: PII_DIRECT
+      FULL_NAME: PII_DIRECT
+      COUNTRY: GENERAL
+      DOMAIN: GENERAL
+      HOURLY_RATE_USD: FINANCIAL
+      STATUS: GENERAL
+      SIGNED_UP_AT: GENERAL
+    CURATED.EXPERTS_SENSITIVE.EXPERT_PII:
+      EXPERT_ID: GENERAL
+      TAX_ID: PII_SENSITIVE
+      PHONE: PII_SENSITIVE
+      STREET_ADDRESS: PII_SENSITIVE
+      DATE_OF_BIRTH: PII_SENSITIVE
+    CURATED.CUSTOMERS.CUSTOMERS:
+      CUSTOMER_ID: GENERAL
+      NAME: GENERAL
+      TIER: GENERAL
+      CONTRACT_VALUE_USD: FINANCIAL
+      REGION: GENERAL
+    CURATED.PAYMENTS.PAYMENTS:
+      PAYMENT_ID: GENERAL
+      EXPERT_ID: GENERAL
+      TASK_ID: GENERAL
+      AMOUNT_USD: FINANCIAL
+      PAID_AT: GENERAL
+      METHOD: GENERAL
+  # Row filtering is not tag-based (Snowflake attaches these per table). Roles not listed see no rows.
+  row_access:
+    CURATED.CUSTOMERS.CUSTOMERS:
+      column: REGION
+      unrestricted: [FR_FINANCE, SVC_AIRFLOW]
+      regions: {FR_DATA_ANALYST: [NA, EMEA]}

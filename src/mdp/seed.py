@@ -42,7 +42,7 @@ def generate(seed=7):
                     f"+1-555-{rnd.randint(1000, 9999)}", f"{rnd.randint(1, 9999)} Example St",
                     datetime(1960, 1, 1).date() + timedelta(days=rnd.randint(0, 14000))))
     customers = [(i + 1, n, rnd.choice(["enterprise", "growth", "strategic"]),
-                  round(rnd.uniform(5e5, 5e7), 2), rnd.choice(["NA", "EMEA", "APAC"]))
+                  round(rnd.uniform(5e5, 5e7), 2), ["NA", "EMEA", "APAC"][i % 3])  # every region present so row policies are testable
                  for i, n in enumerate(LABS)]
     projects = [(i, rnd.choice(customers)[0], f"Project {i:03d}", rnd.choice(DOMAINS),
                  base + timedelta(days=rnd.randint(0, 200)), rnd.choice(["active"] * 3 + ["completed"]))
