@@ -1,4 +1,4 @@
-"""Synthetic Mercor-style data. Deterministic (seeded) so tests can assert on it."""
+"""Synthetic expert-marketplace data. Deterministic (seeded) so tests can assert on it."""
 import random
 from datetime import datetime, timedelta
 

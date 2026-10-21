@@ -1,4 +1,4 @@
-# Mercor Data Platform: Access Control & Governance
+# Data Platform: Access Control & Governance
 
 A governance-as-code system for a Snowflake warehouse modelled on a marketplace business
 (experts, AI-lab customers, projects, tasks, payments). Built as interview prep for a Data
@@ -124,7 +124,7 @@ src/mdp/apply.py       CLI: --dry-run prints SQL, otherwise executes it (additiv
 src/mdp/narrow.py      one-time ACCOUNTADMIN bootstrap, then drops it from the service user
 src/mdp/reconcile.py   CLI: diff declared vs actual grants; --plan (default) / --apply revokes drift
 src/mdp/governance.py  tag-driven masking + row access policies: apply, plan, coverage checks
-src/mdp/seed.py        synthetic Mercor data
+src/mdp/seed.py        synthetic data
 tests/                 offline unit tests for config and SQL generation
 ```
 
