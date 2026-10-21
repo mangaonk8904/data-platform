@@ -1,5 +1,7 @@
 # Data Platform: Access Control & Governance
 
+[![CI](https://github.com/mangaonk8904/data-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/mangaonk8904/data-platform/actions/workflows/ci.yml)
+
 A governance-as-code system for a Snowflake warehouse modelled on a marketplace business
 (experts, AI-lab customers, projects, tasks, payments). Everything is declared in `config/access.yaml` and rendered into
 idempotent SQL; nothing is hand-granted.
