@@ -136,3 +136,20 @@ governance:
       column: REGION
       unrestricted: [FR_FINANCE, SVC_AIRFLOW]
       regions: {FR_DATA_ANALYST: [NA, EMEA]}
+
+# Phase 4: access follows people. The HR feed is the only input; users hold functional roles
+# derived from job_family plus time-boxed exceptions. Exceptions are the only way to get an
+# additive role like FR_PII_READER, and they expire on their own.
+hr_sync:
+  max_disable_fraction: 0.25   # abort if one run would disable more than this share of managed users
+  job_family_roles:
+    Analytics:         [FR_DATA_ANALYST]
+    Machine Learning:  [FR_DATA_SCIENTIST]
+    Finance:           [FR_FINANCE]
+    Talent Support:    [FR_SUPPORT]
+    Data Platform:     [FR_DATA_PLATFORM]
+    Engineering:       []
+    Executive:         [FR_DATA_ANALYST]
+  exceptions:
+    - {employee: noor.haddad@example.com, role: FR_PII_READER, expires: 2026-12-31, reason: "1099 reconciliation, ticket SEC-142"}
+    - {employee: mei.chen@example.com,    role: FR_PII_READER, expires: 2026-09-30, reason: "Audit sample, ticket SEC-097"}

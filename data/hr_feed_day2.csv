@@ -1,0 +1,12 @@
+employee_id,email,full_name,department,job_family,title,manager_email,status,start_date,end_date
+E001,ava.stone@example.com,Ava Stone,Data,Analytics,Data Analyst,zoe.kim@example.com,active,2025-03-03,
+E002,liam.patel@example.com,Liam Patel,Data,Machine Learning,ML Engineer,zoe.kim@example.com,active,2025-05-12,
+E003,noor.haddad@example.com,Noor Haddad,Finance,Finance,Finance Analyst,sofia.reyes@example.com,active,2024-11-01,
+E004,mateo.silva@example.com,Mateo Silva,Operations,Talent Support,Support Specialist,sofia.reyes@example.com,on_leave,2025-08-18,
+E005,zoe.kim@example.com,Zoe Kim,Data,Data Platform,Platform Engineer,sofia.reyes@example.com,active,2024-06-17,
+E006,arjun.okafor@example.com,Arjun Okafor,Data,Machine Learning,ML Engineer,zoe.kim@example.com,active,2025-09-01,
+E007,mei.chen@example.com,Mei Chen,Finance,Finance,Senior Finance Analyst,sofia.reyes@example.com,active,2023-10-09,
+E008,omar.rossi@example.com,Omar Rossi,Operations,Talent Support,Support Specialist,sofia.reyes@example.com,terminated,2025-01-20,2026-10-19
+E009,sofia.reyes@example.com,Sofia Reyes,Executive,Executive,VP Operations,,active,2022-02-14,
+E010,kofi.novak@example.com,Kofi Novak,Engineering,Engineering,Backend Engineer,zoe.kim@example.com,active,2025-06-30,
+E011,ines.chen@example.com,Ines Chen,Data,Analytics,Data Analyst,zoe.kim@example.com,active,2026-10-19,

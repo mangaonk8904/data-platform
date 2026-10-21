@@ -72,6 +72,7 @@ def validate(cfg):
         if w["auto_suspend"] <= 0 or w["credit_quota"] <= 0:
             raise ConfigError(f"{wh}: auto_suspend and credit_quota must be positive")
     validate_governance(cfg)
+    validate_hr_sync(cfg)
 
 
 def column_classes(cfg):
@@ -117,3 +118,21 @@ def validate_governance(cfg):
         for r, regions in ra.get("regions", {}).items():
             if not regions or not all(re.fullmatch(r"[A-Za-z0-9_ -]+", x) for x in regions):
                 raise ConfigError(f"{table}: bad regions for {r}")
+
+
+def validate_hr_sync(cfg):
+    h = cfg.get("hr_sync")
+    if not h:
+        return
+    fr = set(cfg["functional_roles"])
+    if not 0 < h["max_disable_fraction"] <= 1:
+        raise ConfigError("hr_sync.max_disable_fraction must be in (0, 1]")
+    for family, roles in h["job_family_roles"].items():
+        for r in roles:
+            if r not in fr:
+                raise ConfigError(f"hr_sync.job_family_roles.{family}: {r!r} is not a functional role")
+    for e in h.get("exceptions", []):
+        if e["role"] not in fr:
+            raise ConfigError(f"hr_sync exception for {e['employee']}: {e['role']!r} is not a functional role")
+        if not e.get("reason") or not hasattr(e.get("expires"), "year"):
+            raise ConfigError(f"hr_sync exception for {e['employee']}: needs a reason and a date `expires`")

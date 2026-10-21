@@ -123,7 +123,9 @@ src/mdp/apply.py       CLI: --dry-run prints SQL, otherwise executes it (additiv
 src/mdp/narrow.py      one-time ACCOUNTADMIN bootstrap, then drops it from the service user
 src/mdp/reconcile.py   CLI: diff declared vs actual grants; --plan (default) / --apply revokes drift
 src/mdp/governance.py  tag-driven masking + row access policies: apply, plan, coverage checks
+src/mdp/hr_sync.py     HR feed -> Snowflake users + functional roles, with audit log
 src/mdp/seed.py        synthetic data
+data/hr_feed_*.csv     mock HR feed: day 1, and day 2 with a joiner, mover, leaver and leave
 tests/                 offline unit tests for config and SQL generation
 ```
 
@@ -132,8 +134,8 @@ tests/                 offline unit tests for config and SQL generation
 0. Bootstrap, key-pair auth (done)
 1. Layout, role hierarchy, warehouses, seed data (done)
 2. Diffing reconciler with `--plan` and revoke of drift (done)
-3. Tag-based masking, row access policies, per-role verification tests (this phase)
-4. Joiner/mover/leaver sync from a mock HR feed, with audit log
+3. Tag-based masking, row access policies, per-role verification tests (done)
+4. Joiner/mover/leaver sync from a mock HR feed, with audit log (this phase)
 5. PII classifier and drift alerts
 6. Access review report, cost attribution
 7. Design doc, ADRs, Q&A sheet
@@ -147,6 +149,7 @@ uv run python -m mdp.apply               # apply
 uv run python -m mdp.seed                # load synthetic data
 uv run python -m mdp.reconcile --plan    # show drift (add --apply to fix, --fail-on-drift for CI)
 uv run python -m mdp.governance --apply  # tags, masking + row policies (needs the bootstrap below once)
+uv run python -m mdp.hr_sync data/hr_feed_day1.csv --apply   # --plan to preview; day2 for movers/leavers
 uv run python scripts/verify_policies.py # live: what each role actually sees (25 checks)
 uv run python scripts/demo_drift.py      # inject rogue grants, catch and remove them
 uv run --with pytest pytest
@@ -208,3 +211,44 @@ Things learned the hard way:
   therefore declared (for coverage) but never tagged, and config validation rejects a masked
   row-policy column. Only `verify_policies.py`, which actually queries as each role, caught this.
 - Seed customers now cycle through all regions, otherwise the APAC filter has nothing to hide.
+
+## Joiners, movers, leavers (Phase 4)
+
+Access follows people: `mdp.hr_sync` reads an HR feed (CSV here, an API in real life) and
+makes Snowflake users and their `FR_*` roles match it. Nobody is granted a role by hand.
+
+| Feed says | Snowflake does |
+|---|---|
+| new, `active`, start date reached | create user (no password, key/SSO only, no secondary roles), grant roles of their `job_family` |
+| `job_family` changed | revoke old roles, grant new ones |
+| `on_leave` | disable user, keep roles so return is one change |
+| `terminated`, end date passed, or missing from the feed | revoke every managed role, disable user (kept, not dropped, for audit) |
+| start date in the future | nothing yet |
+
+`job_family -> roles` and **time-boxed exceptions** live in `access.yaml` (`hr_sync`). An
+additive role like `FR_PII_READER` is only reachable through an exception that has a reason
+and an expiry date; when it lapses the next sync revokes it. A role granted by hand outside
+the feed is revoked as drift, same as Phase 2 does for roles.
+
+Safety properties:
+- **Only users it created are touched** (`COMMENT = 'managed-by=hr-sync; employee=...'`).
+  `PLATFORM_ADMIN` and every other user are invisible to it.
+- **Blast-radius limit**: a run that would disable more than `max_disable_fraction` (25%) of
+  managed users aborts, so a truncated or empty feed cannot lock the company out.
+  Verified live: a 3-row feed against 11 users is refused. `--force` overrides.
+- **Revokes before grants**, so a mover never briefly holds both sets.
+- **Least privilege**: runs as `SECURITYADMIN` (user and grant management) plus `SYSADMIN`
+  for the audit write. No new account-level grants or `ACCOUNTADMIN` step.
+- The decision logic (`plan`) is a pure function, covered by 18 offline tests.
+
+Every change is appended to `GOVERNANCE.AUDIT.ACCESS_LOG` (run id, timestamp, action, user,
+role, reason, employee id, source file, actor). Changes that executed are audited even if a
+later statement in the same run fails.
+
+Live demo result: day 1 created 10 users with 20 changes and re-plans empty (idempotent). Day 2
+(7 changes) onboarded a joiner, moved a user from analyst to data scientist, disabled a leaver
+and revoked their role, and put a user on leave; the grant reconciler and governance plan both
+still show zero drift.
+
+Known limits: users have no credentials yet (real onboarding needs SSO/SCIM or key registration);
+within one run all audit rows share a timestamp, so intra-run order is not recorded.
