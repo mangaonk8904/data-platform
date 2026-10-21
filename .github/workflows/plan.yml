@@ -40,9 +40,10 @@ jobs:
               cur.execute("SELECT CURRENT_USER(), CURRENT_ROLE()")
               user, role = cur.fetchone()
               cur.execute("SHOW GRANTS TO USER " + user)
-              roles = sorted(r[1] for r in cur.fetchall())
+              cols = [d[0].lower() for d in cur.description]
+              roles = sorted(dict(zip(cols, r, strict=True))["role"] for r in cur.fetchall())
               print(f"connected as {user}, active role {role}, holds {roles}")
-              assert "ACCOUNTADMIN" not in roles, "CI identity must not hold ACCOUNTADMIN"
+              assert set(roles) == {"SYSADMIN", "SECURITYADMIN"}, f"CI identity must hold exactly SYSADMIN+SECURITYADMIN, holds {roles}"
           PY
       - run: uv run python -m mdp.reconcile --plan --fail-on-drift
       - run: uv run python -m mdp.governance --plan --fail-on-drift
