@@ -159,3 +159,12 @@ alerts:
   classifier_min_confidence: 0.6
   exception_warning_days: 14      # warn this long before a time-boxed exception expires
   allowed_role_holders: [PLATFORM_ADMIN]   # users allowed to hold FR_* roles without being HR-managed
+
+# Phase CI-2: the identity GitHub Actions uses. Same privileges as platform_user (no ACCOUNTADMIN, no
+# secondary roles) but its own key, so it can be rotated or revoked without touching a laptop, and the
+# audit log's `actor` tells a CI run from a human one.
+ci_user:
+  name: CI_DEPLOYER
+  roles: [SYSADMIN, SECURITYADMIN]
+  default_role: SYSADMIN
+  default_warehouse: WH_ADMIN

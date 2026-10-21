@@ -2,9 +2,9 @@
 Temporarily grants roles to PLATFORM_ADMIN; always revokes them again."""
 import sys
 
-from mdp.conn import connect
+from mdp.conn import connect, current_user
 
-USER = "PLATFORM_ADMIN"
+USER = current_user()  # whoever is running this
 PROBES = {  # role -> {table: should_be_readable}
     "FR_DATA_ANALYST": {"CURATED.WORK.TASKS": True, "CURATED.EXPERTS.EXPERTS": True, "CURATED.CUSTOMERS.CUSTOMERS": True,
                         "CURATED.EXPERTS_SENSITIVE.EXPERT_PII": False, "CURATED.PAYMENTS.PAYMENTS": False},

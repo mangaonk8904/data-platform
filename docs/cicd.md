@@ -1,7 +1,7 @@
 # CI/CD plan for the data platform
 
-Status: **CI-0 and CI-1 are implemented** (housekeeping and PR checks, section 12); the pieces that
-touch Snowflake (CI-2 onward) are still a proposal. The deploy and scheduled workflows in sections 9.2
+Status: **CI-0, CI-1 and CI-2 are implemented** (housekeeping, PR checks, CI identity and a read-only
+plan workflow, section 12); the deploy and scheduled stages (CI-3 onward) are still a proposal. The deploy and scheduled workflows in sections 9.2
 and 9.3 are drafts, not tested against GitHub or Snowflake. Section 13 lists what must be verified first.
 
 Decisions made by the owner:
@@ -150,7 +150,33 @@ them and each environment has its own key:
 it instead of reading `keys/rsa_key.p8`. That avoids writing a private key to the runner's disk. Keep
 the file path as the fallback so local use is unchanged.
 
-### 6.4 Hardening (later)
+### 6.4 As built (CI-2)
+
+- Config: `ci_user` in [access.yaml](../config/access.yaml), validated to hold only `SYSADMIN` and
+  `SECURITYADMIN`.
+- [ci_identity.py](../src/mdp/ci_identity.py): `python -m mdp.ci_identity --public-key-file keys/ci_deployer.pub`
+  prints the SQL (default) or `--apply`s it. Re-running with a new key rotates the key. The user is
+  `TYPE = SERVICE` (no password, no MFA); pass `--user-type ''` on an account without that option.
+- [conn.py](../src/mdp/conn.py): `SNOWFLAKE_PRIVATE_KEY_B64` takes precedence over the key file.
+- `SNOWFLAKE_ENV=prod` (set in every CI job) makes `mdp.seed` and the `demo_*` scripts refuse to run.
+  The `verify_*`/`demo_*` scripts now grant roles to whoever is running them (`SNOWFLAKE_USER`).
+- GitHub environment `prod-plan`, deployable from `main` only, with secrets `SNOWFLAKE_ACCOUNT`,
+  `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY_B64`.
+- [plan.yml](../.github/workflows/plan.yml): manual, read-only. Prints the identity and its roles, then runs
+  `reconcile --plan`, `governance --plan` and `drift --fail-on high`, failing on any drift.
+- Tests ([test_workflows.py](../tests/test_workflows.py)) enforce that a workflow using Snowflake secrets is
+  never PR-triggered, runs in an environment, runs only on `main`, sets `SNOWFLAKE_ENV=prod`, and shares the
+  `snowflake-prod` concurrency group.
+
+Key generation (the private key never goes through this repo's tooling):
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt -out keys/ci_deployer.p8   # keys/ is gitignored
+openssl rsa -in keys/ci_deployer.p8 -pubout -out keys/ci_deployer.pub
+base64 < keys/ci_deployer.p8 | tr -d '\n' | gh secret set SNOWFLAKE_PRIVATE_KEY_B64 --env prod-plan
+```
+
+### 6.5 Hardening (later)
 
 - **Network policy** on `CI_DEPLOYER` limiting logins to known egress IPs. GitHub-hosted runners use very
   large, changing IP ranges, so this only works with a self-hosted runner with a static address. **Never
@@ -167,7 +193,7 @@ Automation must not hold `ACCOUNTADMIN`. These steps are run by a human, documen
 
 | Step | When | Command / SQL |
 |---|---|---|
-| Create `CI_DEPLOYER` and register its public key | once per account | `CREATE USER ...; ALTER USER ... SET RSA_PUBLIC_KEY=...; GRANT ROLE SYSADMIN, SECURITYADMIN` |
+| ~~Create `CI_DEPLOYER` and register its public key~~ | **not break-glass after all**: `SECURITYADMIN` can create the user and grant it `SYSADMIN`/`SECURITYADMIN`, so `python -m mdp.ci_identity` does it with no `ACCOUNTADMIN` (verified live) | see 6.5 |
 | Account-level `APPLY` grants for governance | once per account | `python -m mdp.governance --bootstrap-sql` |
 | Resource monitors + attach to warehouses | once per account, and when a warehouse is added | `python -m mdp.narrow` (dry run first) |
 | Rotate `ACCOUNTADMIN`-owned credentials | on schedule | Snowsight |
@@ -467,14 +493,14 @@ Ordered by how much they block. File links are where the change goes.
 | # | Change | Why | Size |
 |---|---|---|---|
 | 1 | ~~`pyproject.toml`: pytest config, `dev` group, build system~~ **done in CI-0/1** (also fixed `python -m mdp.*` failing without `PYTHONPATH`) | tests and CLIs failed without `PYTHONPATH=src` | S |
-| 2 | [conn.py](../src/mdp/conn.py): `SNOWFLAKE_PRIVATE_KEY_B64` | no key file on runners (6.3) | S |
-| 3 | `scripts/verify_*.py`: take the user from `SNOWFLAKE_USER`, not the literal `PLATFORM_ADMIN` | otherwise they grant roles to the wrong user in CI | S |
-| 4 | [seed.py](../src/mdp/seed.py) and `demo_*.py`: refuse unless `SNOWFLAKE_ENV=dev` | seed truncates tables; a mis-pointed secret must not be able to wipe prod | S |
+| 2 | ~~[conn.py](../src/mdp/conn.py): `SNOWFLAKE_PRIVATE_KEY_B64`~~ **done** | no key file on runners (6.3) | S |
+| 3 | ~~`scripts/verify_*.py`: take the user from `SNOWFLAKE_USER`, not the literal `PLATFORM_ADMIN`~~ **done** | otherwise they grant roles to the wrong user in CI | S |
+| 4 | ~~[seed.py](../src/mdp/seed.py) and `demo_*.py`: refuse where `SNOWFLAKE_ENV=prod`~~ **done** | seed truncates tables; a mis-pointed secret must not be able to wipe prod | S |
 | 5 | [reconcile.py](../src/mdp/reconcile.py): `--max-revokes N` guard, like HR sync's blast-radius check | a bad merge could revoke hundreds of grants in one run; today only a human reading the plan stops it | M |
 | 6 | [governance.py](../src/mdp/governance.py): sync entitlements in one transaction (`DELETE` + `INSERT`, or `MERGE`) instead of `TRUNCATE` then `INSERT` | `TRUNCATE` auto-commits, so for a moment the row policy has no entitlements and denies everyone (fails closed, but it is an outage) | S |
 | 7 | Machine-readable plans: `--format json` on the three `--plan` commands | better PR/issue comments, and a stable thing to hash | M |
 | 8 | Record the deploy commit: add `deploy_sha` (from `GITHUB_SHA`) to `ACCESS_LOG` and `DRIFT_EVENTS` | ties every access change to the commit and run that made it | S |
-| 9 | Support more than one platform user in `platform_user` config | declare `CI_DEPLOYER` alongside `PLATFORM_ADMIN` | M |
+| 9 | ~~Support more than one platform user~~ **done** as a separate `ci_user` section | declare `CI_DEPLOYER` alongside `PLATFORM_ADMIN` | M |
 | 10 | Heartbeat check in `mdp.drift` (fail if last run > 48h) | schedules can be disabled silently (8.3) | S |
 
 ## 11. Repository controls
@@ -509,7 +535,7 @@ Each step is independently useful and ends in something checkable.
 |---|---|---|
 | **CI-0 Housekeeping** (done, except the GitHub settings) | delete the PyPI workflow; pytest config; Dependabot; CODEOWNERS; branch protection; decide repo visibility (4) | `main` rejects a direct push; `uv run pytest` passes with no env vars |
 | **CI-1 PR checks** (done, not yet run on GitHub) | `ci.yml` (section 9.1) | a PR that breaks `access.yaml` or a test cannot merge; the SQL diff shows in the summary |
-| **CI-2 CI identity** | create `CI_DEPLOYER` and key (break-glass); `conn.py` change; environment secrets; code changes 2-4 | a manual `workflow_dispatch` runs `reconcile --plan` against the account and prints "0 changes" |
+| **CI-2 CI identity** (done; plan workflow awaits first run) | create `CI_DEPLOYER` and key (break-glass); `conn.py` change; environment secrets; code changes 2-4 | a manual `workflow_dispatch` runs `reconcile --plan` against the account and prints "0 changes" |
 | **CI-3 Gated deploy** | `deploy.yml` with dev (if a second account exists) and prod plan/approve/apply; code changes 5-8 | merging a one-line config change deploys it with one approval and the run proves zero drift afterwards |
 | **CI-4 Scheduled** | nightly drift + issue on failure; HR sync workflow; heartbeat (change 10) | an injected drift (use `scripts/demo_alerts.py` in dev) opens an issue within a day |
 | **CI-5 Hardening** | SHA pinning enforced by a policy test; evaluate keyless auth and network policy; key rotation drill; game-day | a deliberately bad PR, a revoked key, and a disabled schedule are each caught |

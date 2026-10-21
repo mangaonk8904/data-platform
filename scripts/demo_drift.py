@@ -4,11 +4,12 @@ proves the leak with a real query as FR_DATA_ANALYST, then reconciles and proves
 import warnings
 
 from mdp.config import load
-from mdp.conn import connect
+from mdp.conn import connect, current_user, require_not_prod
 from mdp.reconcile import plan, statement
 
 warnings.filterwarnings("ignore")
-USER = "PLATFORM_ADMIN"
+require_not_prod("demo_drift (injects rogue grants)")
+USER = current_user()
 ROGUE = [
     "GRANT ROLE AR_CURATED__EXPERTS_SENSITIVE__RO TO ROLE FR_DATA_ANALYST",
     "GRANT DELETE ON TABLE CURATED.WORK.TASKS TO ROLE AR_CURATED__WORK__RO",

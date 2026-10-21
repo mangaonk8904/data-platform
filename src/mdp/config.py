@@ -74,6 +74,7 @@ def validate(cfg):
     validate_governance(cfg)
     validate_hr_sync(cfg)
     validate_alerts(cfg)
+    validate_ci_user(cfg)
 
 
 def column_classes(cfg):
@@ -150,3 +151,15 @@ def validate_alerts(cfg):
     for u in a.get("allowed_role_holders", []):
         if not IDENT.match(u):
             raise ConfigError(f"alerts.allowed_role_holders: invalid user {u!r}")
+
+
+def validate_ci_user(cfg):
+    u = cfg.get("ci_user")
+    if not u:
+        return
+    if not IDENT.match(u["name"]) or u["name"] == cfg["platform_user"]["name"]:
+        raise ConfigError("ci_user.name must be a valid identifier distinct from platform_user")
+    if not set(u["roles"]) <= {"SYSADMIN", "SECURITYADMIN"} or u["default_role"] not in u["roles"]:
+        raise ConfigError("ci_user may hold only SYSADMIN and SECURITYADMIN (never ACCOUNTADMIN)")
+    if u["default_warehouse"] not in cfg["warehouses"]:
+        raise ConfigError("ci_user.default_warehouse is not a declared warehouse")
