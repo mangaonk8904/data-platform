@@ -50,3 +50,38 @@ def test_ci_never_touches_snowflake():
 
 def test_rendered_sql_contains_no_accountadmin_outside_bootstrap():
     assert all(role != "ACCOUNTADMIN" for role, _ in render(load()))
+
+
+def _snowflake_workflows():
+    return [p for p in WORKFLOWS if "secrets.SNOWFLAKE_" in p.read_text()]
+
+
+def test_snowflake_workflows_exist_and_are_never_pr_triggered():
+    assert _snowflake_workflows()
+    for path in _snowflake_workflows():
+        wf = yaml.safe_load(path.read_text())
+        triggers = wf.get(True) or wf.get("on")     # PyYAML reads the key `on` as boolean True
+        assert not ({"pull_request", "pull_request_target"} & set(triggers)), f"{path.name}: secrets in a PR workflow"
+        assert set(triggers) <= {"workflow_dispatch", "schedule", "push", "workflow_call"}, path.name
+
+
+def test_snowflake_jobs_use_a_protected_environment_and_run_only_on_main():
+    for path in _snowflake_workflows():
+        for name, job in yaml.safe_load(path.read_text())["jobs"].items():
+            if "secrets.SNOWFLAKE_" in yaml.safe_dump(job):
+                assert job.get("environment"), f"{path.name}:{name} has no environment"
+                assert "refs/heads/main" in str(job.get("if", "")) or "push" in str(yaml.safe_load(path.read_text()).get(True)), \
+                    f"{path.name}:{name} must be restricted to main"
+                assert job["env"]["SNOWFLAKE_ENV"] == "prod"      # arms the seed/demo guards
+
+
+def test_plan_workflow_is_read_only():
+    text = (ROOT / ".github" / "workflows" / "plan.yml").read_text()
+    assert "--apply" not in text and "--record" not in text
+    assert "workflow_dispatch" in text
+
+
+def test_snowflake_workflows_share_one_concurrency_group():
+    for path in _snowflake_workflows():
+        wf = yaml.safe_load(path.read_text())
+        assert wf["concurrency"]["group"] == "snowflake-prod" and wf["concurrency"]["cancel-in-progress"] is False

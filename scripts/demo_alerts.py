@@ -7,8 +7,9 @@
 import subprocess
 import sys
 
-from mdp.conn import connect
+from mdp.conn import connect, require_not_prod
 
+require_not_prod("demo_alerts (injects drift)")
 TABLE = "CURATED.WORK.TASK_NOTES"
 
 

@@ -2,9 +2,9 @@
 Temporarily grants roles to PLATFORM_ADMIN; always revokes them again."""
 import sys
 
-from mdp.conn import connect
+from mdp.conn import connect, current_user
 
-USER = "PLATFORM_ADMIN"
+USER = current_user()  # whoever is running this
 E, C, P, PAY = ("CURATED.EXPERTS.EXPERTS", "CURATED.CUSTOMERS.CUSTOMERS",
                 "CURATED.EXPERTS_SENSITIVE.EXPERT_PII", "CURATED.PAYMENTS.PAYMENTS")
 MASK = "***MASKED***"

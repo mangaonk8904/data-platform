@@ -2,7 +2,7 @@
 import random
 from datetime import datetime, timedelta
 
-from mdp.conn import connect
+from mdp.conn import connect, require_not_prod
 
 N_EXPERTS, N_PROJECTS, N_TASKS = 500, 40, 6000
 DOMAINS = ["Law", "Medicine", "Finance", "Software", "Consulting", "Biology", "Physics", "Writing"]
@@ -61,6 +61,7 @@ def generate(seed=7):
 
 
 def main():
+    require_not_prod("seed (it truncates every business table)")
     data = generate()
     with connect(role="SYSADMIN", warehouse="WH_ADMIN") as conn:
         cur = conn.cursor()

@@ -1,0 +1,49 @@
+name: Plan (read-only)
+
+# Manual only. Proves the CI identity can reach Snowflake and that the account matches access.yaml.
+# Read-only commands only; tests/test_workflows.py fails the build if a write flag ever appears here.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Shared with the future deploy workflow so a plan never reads half-applied state.
+concurrency:
+  group: snowflake-prod
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod-plan
+    env:
+      SNOWFLAKE_ENV: prod
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY_B64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}
+      SNOWFLAKE_WAREHOUSE: WH_ADMIN
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: who am I (proves the key and the role limits)
+        run: |
+          uv run python - <<'PY'
+          from mdp.conn import connect
+          with connect(role="SYSADMIN") as c:
+              cur = c.cursor()
+              cur.execute("USE SECONDARY ROLES NONE")
+              cur.execute("SELECT CURRENT_USER(), CURRENT_ROLE()")
+              user, role = cur.fetchone()
+              cur.execute("SHOW GRANTS TO USER " + user)
+              roles = sorted(r[1] for r in cur.fetchall())
+              print(f"connected as {user}, active role {role}, holds {roles}")
+              assert "ACCOUNTADMIN" not in roles, "CI identity must not hold ACCOUNTADMIN"
+          PY
+      - run: uv run python -m mdp.reconcile --plan --fail-on-drift
+      - run: uv run python -m mdp.governance --plan --fail-on-drift
+      - run: uv run python -m mdp.drift --fail-on high
