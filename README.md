@@ -1,8 +1,7 @@
 # Data Platform: Access Control & Governance
 
 A governance-as-code system for a Snowflake warehouse modelled on a marketplace business
-(experts, AI-lab customers, projects, tasks, payments). Built as interview prep for a Data
-Platform Engineer role. Everything is declared in `config/access.yaml` and rendered into
+(experts, AI-lab customers, projects, tasks, payments). Everything is declared in `config/access.yaml` and rendered into
 idempotent SQL; nothing is hand-granted.
 
 ## Problems this addresses
