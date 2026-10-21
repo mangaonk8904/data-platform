@@ -124,6 +124,8 @@ src/mdp/narrow.py      one-time ACCOUNTADMIN bootstrap, then drops it from the s
 src/mdp/reconcile.py   CLI: diff declared vs actual grants; --plan (default) / --apply revokes drift
 src/mdp/governance.py  tag-driven masking + row access policies: apply, plan, coverage checks
 src/mdp/hr_sync.py     HR feed -> Snowflake users + functional roles, with audit log
+src/mdp/classify.py    PII classifier: column names + sampled values vs access.yaml
+src/mdp/drift.py       one drift report over every control; deduplicated alert log
 src/mdp/seed.py        synthetic data
 data/hr_feed_*.csv     mock HR feed: day 1, and day 2 with a joiner, mover, leaver and leave
 tests/                 offline unit tests for config and SQL generation
@@ -135,8 +137,8 @@ tests/                 offline unit tests for config and SQL generation
 1. Layout, role hierarchy, warehouses, seed data (done)
 2. Diffing reconciler with `--plan` and revoke of drift (done)
 3. Tag-based masking, row access policies, per-role verification tests (done)
-4. Joiner/mover/leaver sync from a mock HR feed, with audit log (this phase)
-5. PII classifier and drift alerts
+4. Joiner/mover/leaver sync from a mock HR feed, with audit log (done)
+5. PII classifier and drift alerts (this phase)
 6. Access review report, cost attribution
 7. Design doc, ADRs, Q&A sheet
 
@@ -150,6 +152,9 @@ uv run python -m mdp.seed                # load synthetic data
 uv run python -m mdp.reconcile --plan    # show drift (add --apply to fix, --fail-on-drift for CI)
 uv run python -m mdp.governance --apply  # tags, masking + row policies (needs the bootstrap below once)
 uv run python -m mdp.hr_sync data/hr_feed_day1.csv --apply   # --plan to preview; day2 for movers/leavers
+uv run python -m mdp.classify            # find unclassified / under-classified PII anywhere
+uv run python -m mdp.drift --record      # all checks; alert only on changes (cron this)
+uv run python scripts/demo_alerts.py     # inject 3 problems, watch them alert once, fix, resolve
 uv run python scripts/verify_policies.py # live: what each role actually sees (25 checks)
 uv run python scripts/demo_drift.py      # inject rogue grants, catch and remove them
 uv run --with pytest pytest
@@ -252,3 +257,46 @@ still show zero drift.
 
 Known limits: users have no credentials yet (real onboarding needs SSO/SCIM or key registration);
 within one run all audit rows share a timestamp, so intra-run order is not recorded.
+
+## PII classifier and drift alerts (Phase 5)
+
+**Classifier** (`mdp.classify`). Phase 3 enforces classification only in *restricted* schemas;
+a new table of emails in an "internal" schema would sail through. The classifier samples
+every table outside `GOVERNANCE`/`PLATFORM` and judges each column on two independent signals:
+its **name** (email, tax_id, phone, amount, ...; 0.70 confidence) and its **values**
+(email, phone, SSN, Luhn-valid card, IPv4, IBAN shapes in at least 60% of at least 5 samples;
+0.90 confidence). Agreement gives 0.97; if they disagree the value signal wins. It is
+deterministic and every finding carries its evidence ("12/12 sampled values are email addresses").
+
+| Finding | Meaning | Severity |
+|---|---|---|
+| UNCLASSIFIED | looks sensitive, not in `governance.columns` | HIGH if value-confirmed, else MEDIUM |
+| UNDER_CLASSIFIED | explicitly `GENERAL` but looks sensitive | HIGH |
+| DIFFERENT_CLASS | classified, but as a different class than detected | LOW |
+
+Already-masked columns are not re-read by value (their sample is masked), so the classifier
+needs no PII access of its own. Unreadable tables are reported, not silently skipped.
+
+**Drift monitor** (`mdp.drift`). One report over every control, each event with a severity and
+a stable fingerprint:
+
+| Check | Raises |
+|---|---|
+| grants (Phase 2) | undeclared privilege held (HIGH), declared one missing / orphan role (MEDIUM) |
+| governance (Phase 3) | coverage findings, missing tag or policy (HIGH), extra attachment (MEDIUM) |
+| classifier | the findings above |
+| exceptions (Phase 4) | expired exception still held (HIGH), additive role with no exception (HIGH), `FR_*` held by an unmanaged user (HIGH), exception expiring within 14 days (LOW) |
+| hr (`--hr-feed`) | user access differs from the feed (MEDIUM) |
+
+With `--record`, events go to `GOVERNANCE.AUDIT.DRIFT_EVENTS` and only **changes** are alerts:
+newly opened and newly resolved. A standing problem is not re-reported every run, and a problem
+that returns after being fixed alerts again. `--fail-on high|medium|low` sets the exit code for
+CI/cron; set `ALERT_WEBHOOK_URL` for a Slack-style JSON post (off by default, not exercised live).
+
+`scripts/demo_alerts.py` is the live proof: it injects a table of emails and phones in
+`CURATED.WORK`, an expired PII exception that was never revoked, and a stray `DELETE` grant;
+the first run opens 4 alerts, the second opens none, and after remediation all 4 resolve.
+
+Limits: the classifier samples 200 rows, so rare PII in a mostly-clean column can be missed;
+it knows shapes, not free text or names of people in a plain `notes` column. Alert delivery is
+a webhook only, and nothing schedules the run yet.

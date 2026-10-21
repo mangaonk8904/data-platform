@@ -153,3 +153,9 @@ hr_sync:
   exceptions:
     - {employee: noor.haddad@example.com, role: FR_PII_READER, expires: 2026-12-31, reason: "1099 reconciliation, ticket SEC-142"}
     - {employee: mei.chen@example.com,    role: FR_PII_READER, expires: 2026-09-30, reason: "Audit sample, ticket SEC-097"}
+
+# Phase 5: drift monitoring. Every check feeds one deduplicated event log.
+alerts:
+  classifier_min_confidence: 0.6
+  exception_warning_days: 14      # warn this long before a time-boxed exception expires
+  allowed_role_holders: [PLATFORM_ADMIN]   # users allowed to hold FR_* roles without being HR-managed

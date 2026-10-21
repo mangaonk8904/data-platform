@@ -73,6 +73,7 @@ def validate(cfg):
             raise ConfigError(f"{wh}: auto_suspend and credit_quota must be positive")
     validate_governance(cfg)
     validate_hr_sync(cfg)
+    validate_alerts(cfg)
 
 
 def column_classes(cfg):
@@ -136,3 +137,16 @@ def validate_hr_sync(cfg):
             raise ConfigError(f"hr_sync exception for {e['employee']}: {e['role']!r} is not a functional role")
         if not e.get("reason") or not hasattr(e.get("expires"), "year"):
             raise ConfigError(f"hr_sync exception for {e['employee']}: needs a reason and a date `expires`")
+
+
+def validate_alerts(cfg):
+    a = cfg.get("alerts")
+    if not a:
+        return
+    if not 0 < a["classifier_min_confidence"] <= 1:
+        raise ConfigError("alerts.classifier_min_confidence must be in (0, 1]")
+    if a["exception_warning_days"] < 0:
+        raise ConfigError("alerts.exception_warning_days must be >= 0")
+    for u in a.get("allowed_role_holders", []):
+        if not IDENT.match(u):
+            raise ConfigError(f"alerts.allowed_role_holders: invalid user {u!r}")
