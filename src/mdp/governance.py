@@ -165,7 +165,7 @@ def check_columns(cfg, live):
 def _rows(cur, sql):
     cur.execute(sql)
     cols = [d[0].lower() for d in cur.description]
-    return [dict(zip(cols, r)) for r in cur.fetchall()]
+    return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
 
 
 def scope_tables(cfg, cur):

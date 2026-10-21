@@ -3,8 +3,17 @@ import copy
 import pytest
 
 from mdp.config import ConfigError, load, validate
-from mdp.governance import (Atom, check_columns, definitions, desired_atoms, diff, family_of, mask_body,
-                            rap_body, statement)
+from mdp.governance import (
+    Atom,
+    check_columns,
+    definitions,
+    desired_atoms,
+    diff,
+    family_of,
+    mask_body,
+    rap_body,
+    statement,
+)
 
 
 @pytest.fixture

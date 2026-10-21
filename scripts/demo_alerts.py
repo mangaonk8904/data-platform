@@ -14,8 +14,8 @@ TABLE = "CURATED.WORK.TASK_NOTES"
 
 def run(*args):
     out = subprocess.run([sys.executable, "-m", *args], capture_output=True, text=True)
-    lines = [l for l in out.stdout.splitlines() if l.strip()]
-    print("\n".join("   " + l for l in lines))
+    lines = [line for line in out.stdout.splitlines() if line.strip()]
+    print("\n".join("   " + line for line in lines))
     return out.returncode
 
 

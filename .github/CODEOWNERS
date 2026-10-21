@@ -1,0 +1,9 @@
+# Access-model changes need the owner's review. Enforced once "Require review from Code Owners"
+# is switched on in branch protection (see docs/cicd.md, section 11).
+/config/                     @mangaonk8904
+/src/mdp/sqlgen.py           @mangaonk8904
+/src/mdp/reconcile.py        @mangaonk8904
+/src/mdp/governance.py       @mangaonk8904
+/src/mdp/hr_sync.py          @mangaonk8904
+/.github/                    @mangaonk8904
+/docs/cicd.md                @mangaonk8904

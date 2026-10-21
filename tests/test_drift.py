@@ -4,8 +4,16 @@ import pytest
 
 from mdp.classify import Finding
 from mdp.config import load
-from mdp.drift import (Event, classifier_events, diff_events, exception_events, grant_events, hr_events, slack_payload,
-                       worst)
+from mdp.drift import (
+    Event,
+    classifier_events,
+    diff_events,
+    exception_events,
+    grant_events,
+    hr_events,
+    slack_payload,
+    worst,
+)
 from mdp.hr_sync import Change
 from mdp.reconcile import Atom
 

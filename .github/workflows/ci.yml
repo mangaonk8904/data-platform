@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_call:    # reused by the deploy workflow (CI-3)
+
+# No job below needs Snowflake or any secret: fork PRs must behave identically.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+
+  config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: validate access.yaml and render every statement (offline)
+        run: |
+          uv run python -c "from mdp.config import load; load()"
+          uv run python -m mdp.apply --dry-run > rendered.sql
+          uv run python -m mdp.governance --dry-run >> rendered.sql
+          wc -l rendered.sql
+
+  sql-diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: render base and head, show the diff in the job summary
+        run: |
+          render() { uv run python -m mdp.apply --dry-run; uv run python -m mdp.governance --dry-run; }
+          render > head.sql
+          git checkout -q "${{ github.event.pull_request.base.sha }}" -- config src
+          render > base.sql || echo "(base could not render)" > base.sql
+          git checkout -q HEAD -- config src
+          {
+            echo '### Rendered SQL diff (base to PR)'
+            echo '```diff'
+            diff -u base.sql head.sql || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+      - name: audit locked dependencies
+        run: uvx pip-audit --requirement <(uv export --locked --no-hashes --no-emit-project)

@@ -98,7 +98,7 @@ def validate_governance(cfg):
             if r not in roles:
                 raise ConfigError(f"class {cls}: unmask role {r!r} is not a declared role")
     known = set(all_schemas(cfg))
-    for table, cols in {**g.get("columns", {}), **g.get("row_access", {})}.items():
+    for table in {**g.get("columns", {}), **g.get("row_access", {})}:
         parts = table.split(".")
         if len(parts) != 3 or (parts[0], parts[1]) not in known or not all(IDENT.match(p) for p in parts):
             raise ConfigError(f"unknown table reference {table!r}")

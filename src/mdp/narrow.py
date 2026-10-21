@@ -9,7 +9,7 @@ import sys
 
 from mdp.config import load
 from mdp.conn import connect
-from mdp.sqlgen import ACCOUNTADMIN, SECURITYADMIN, SYSADMIN, monitors, platform_user
+from mdp.sqlgen import ACCOUNTADMIN, monitors, platform_user
 
 
 def main():

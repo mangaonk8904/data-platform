@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from mdp.config import ConfigError, ROOT, load, validate
+from mdp.config import ROOT, ConfigError, load, validate
 from mdp.hr_sync import SyncError, check_blast_radius, desired, plan, read_feed, statement, username
 
 TODAY = date(2026, 10, 20)

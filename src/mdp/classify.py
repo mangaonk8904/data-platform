@@ -144,7 +144,7 @@ def sample_tables(cfg, cur):
             continue
         cur.execute(f"SHOW TABLES IN DATABASE {db}")
         cols = [d[0].lower() for d in cur.description]
-        names = [dict(zip(cols, r)) for r in cur.fetchall()]
+        names = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
         for t in names:
             if t["schema_name"] == "INFORMATION_SCHEMA":
                 continue

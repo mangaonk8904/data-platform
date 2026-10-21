@@ -47,7 +47,7 @@ def test_every_schema_is_managed_access(cfg):
 
 
 def test_only_access_roles_get_object_privileges(cfg):
-    for role, sql in render(cfg):
+    for _role, sql in render(cfg):
         if sql.startswith("GRANT") and " ON " in sql and "TO ROLE" in sql:
             target = sql.split("TO ROLE ")[1]
             assert target.startswith("AR_"), sql

@@ -131,10 +131,9 @@ def check_blast_radius(cfg, changes, current):
 
 
 def statement(c, email="", name=""):
-    q = lambda s: _q(s)
     if c.action == "CREATE_USER":
-        return (f"CREATE USER IF NOT EXISTS {c.user} LOGIN_NAME = '{q(email)}' EMAIL = '{q(email)}' "
-                f"DISPLAY_NAME = '{q(name)}' DEFAULT_SECONDARY_ROLES = () "
+        return (f"CREATE USER IF NOT EXISTS {c.user} LOGIN_NAME = '{_q(email)}' EMAIL = '{_q(email)}' "
+                f"DISPLAY_NAME = '{_q(name)}' DEFAULT_SECONDARY_ROLES = () "
                 f"COMMENT = '{MARK}; employee={c.employee_id}'")
     if c.action in ("GRANT", "REVOKE"):
         return f"{c.action} ROLE {c.role} {'TO' if c.action == 'GRANT' else 'FROM'} USER {c.user}"
@@ -149,7 +148,7 @@ AUDIT_DDL = (f"CREATE TABLE IF NOT EXISTS {AUDIT_TABLE} (run_id VARCHAR, ts TIME
 def _rows(cur, sql):
     cur.execute(sql)
     cols = [d[0].lower() for d in cur.description]
-    return [dict(zip(cols, r)) for r in cur.fetchall()]
+    return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
 
 
 def read_current(cfg, cur):

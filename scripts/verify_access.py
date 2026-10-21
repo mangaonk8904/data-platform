@@ -22,7 +22,7 @@ with connect(role="SECURITYADMIN") as conn:
     cur = conn.cursor()
     cur.execute("SHOW SCHEMAS IN DATABASE CURATED")
     cols = [d[0] for d in cur.description]
-    schemas = [dict(zip(cols, r)) for r in cur.fetchall() if r[1] != "INFORMATION_SCHEMA"]
+    schemas = [dict(zip(cols, r, strict=True)) for r in cur.fetchall() if r[1] != "INFORMATION_SCHEMA"]
     unmanaged = [r["name"] for r in schemas if "MANAGED ACCESS" not in (r["options"] or "")]
     print("managed-access schemas:", "ok" if not unmanaged else f"MISSING {unmanaged}")
     failures += bool(unmanaged)
