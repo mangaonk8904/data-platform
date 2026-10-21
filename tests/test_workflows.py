@@ -85,3 +85,8 @@ def test_snowflake_workflows_share_one_concurrency_group():
     for path in _snowflake_workflows():
         wf = yaml.safe_load(path.read_text())
         assert wf["concurrency"]["group"] == "snowflake-prod" and wf["concurrency"]["cancel-in-progress"] is False
+
+
+def test_plan_identity_check_asserts_the_exact_role_set():
+    text = (ROOT / ".github" / "workflows" / "plan.yml").read_text()
+    assert '["role"]' in text and 'set(roles) == {"SYSADMIN", "SECURITYADMIN"}' in text
